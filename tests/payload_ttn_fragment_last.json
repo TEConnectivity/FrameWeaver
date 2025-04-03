@@ -1,0 +1,48 @@
+{
+    "end_device_ids": {
+        "device_id": "dev1",
+        "application_ids": {
+            "application_id": "app1"
+        },
+        "dev_eui": "4200000000000000",
+        "join_eui": "4200000000000000",
+        "dev_addr": "01DA1F15"
+    },
+    "correlation_ids": [
+        "gs:conn:01D2CSNX7FJVKQPCVG612QF1TX",
+        "gs:uplink:01D2CV8HF62ME0D7MZWE38HHH8",
+        "ns:uplink:01D2CV8HF6FYJHKZ45YY1DB3MR",
+        "rpc:/ttn.lorawan.v3.GsNs/HandleUplink:01D2CV8HF6XR7ZFVK768PDG3J4",
+        "as:up:01D2CV8HNGJ57G25BW0FCZNY07"
+    ],
+    "uplink_message": {
+        "session_key_id": "AWiZpAyXrAfEkUNkBljRoA==",
+        "f_port": 202,
+        "frm_payload": "0AAagANgAUIAKIAFGADNABnAAzwAzQAZsAM4AM0AGagDNgA=",
+        "rx_metadata": [
+            {
+                "gateway_ids": {
+                    "gateway_id": "eui-0242020000247803",
+                    "eui": "0242020000247803"
+                },
+                "time": "2019-01-29T13:02:34.981Z",
+                "timestamp": 1283325000,
+                "rssi": -35,
+                "snr": 5,
+                "uplink_token": "CiIKIAoUZXVpLTAyNDIwMjAwMDAyNDc4MDMSCAJCAgAAJHgDEMj49+ME"
+            }
+        ],
+        "settings": {
+            "data_rate": {
+                "lora": {
+                    "bandwidth": 125000,
+                    "spreading_factor": 7
+                }
+            },
+            "coding_rate": "4/6",
+            "frequency": "868500000",
+            "gateway_channel_index": 2,
+            "device_channel_index": 2
+        }
+    }
+}

@@ -1,0 +1,3 @@
+[submodule "ttn-decoder"]
+	path = src/submodules/ttn-decoder
+	url = https://github.com/TEConnectivity/ttn-decoder

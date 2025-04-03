@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Ignore the dev config file
+/src/app/config_dev.yaml
+
 # C extensions
 *.so
 
