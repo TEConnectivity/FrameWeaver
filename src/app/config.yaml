@@ -1,0 +1,43 @@
+# Enable at least one type of input
+input:
+  mqtt:
+    enable: true
+    host: "eu1.cloud.thethings.industries"
+    port: 1883
+    topic: "v3/{APP_ID@TENANT_ID}/devices/#" 
+
+    # Auth is optional. If no auth is needed, remove the key.
+    auth:
+      username: "username"
+      password: "password"
+
+  http:
+    enable: false
+    host: "0.0.0.0"
+    port: 8080
+
+output:
+  mqtt:
+    enable: false
+    host: "mqtt-broker.local"
+    port: 1883
+    topic: "output/topic"
+  http:
+    enable: false
+    url: "http://destination-server.com/api"
+
+# Host the broker on the app itself rather than on a remote location
+local-broker:
+  enable: false
+
+
+frame:
+  max_chunks: 15  # Maximum number of chunk authorized for a sensor
+  timeout: 48  # Timeout (hours) before buffer flushing for a given sensor
+  lns: ttn # Allow proper format parsing for the incoming frame. Valid options : ttn, loriot
+
+log:
+  level: debug # valid options : debug, info, warning, error, critical
+
+
+# TTN : https://www.thethingsindustries.com/docs/integrations/other-integrations/mqtt/
