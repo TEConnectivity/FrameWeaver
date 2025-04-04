@@ -1,4 +1,4 @@
-import concurrent.futures
+import ast
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 import requests
@@ -6,9 +6,8 @@ import threading
 import time
 import logging
 from flask import Flask, request, jsonify
-from typing import TypedDict, List
-import traceback
-import pythonmonkey as pm
+from typing import TypedDict
+import js_fetcher  # Import the fetcher script
 import base64 as b64
 import subprocess
 import json
@@ -42,8 +41,6 @@ logger = logging.getLogger(__name__)
 
 client_output = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
 
-decoder = pm.require("../submodules/ttn-decoder/TnnJsDecoder/TE_TtnDecoder.js")
-
 
 class Frame(TypedDict):
     raw: bytes
@@ -64,6 +61,32 @@ DATA_FPORT = 10 # port used to trigger decoder to look like the frame is whole
 
 TIMEOUT_VALUE = config["frame"]["timeout"]
 MAX_CHUNKS = config["frame"]["max_chunks"]
+
+
+
+
+####### Javascript interface #######
+
+def start_js_worker():
+    """Start the JS worker process and return the queues and process."""
+    task_queue = multiprocessing.Queue()
+    result_queue = multiprocessing.Queue()
+    
+    worker_process = multiprocessing.Process(target=js_fetcher.js_worker, args=(task_queue, result_queue))
+    worker_process.start()
+
+    return worker_process, task_queue, result_queue
+
+def stop_js_worker():
+    # Stop the fetcher process
+    task_queue.put("STOP")
+    process.join()
+
+def call_js_function(task_queue, result_queue, func_name, *args):
+    """Send a JS function call request and get the result."""
+    task_queue.put((func_name, args))  # Send function and args
+    return result_queue.get()  # Receive result
+
 
 ######## MOSQUITTO #########
 
@@ -102,17 +125,20 @@ def process_frame(devEUI: str):
     reconstructed_frame = reassemble_frame(devEUI)
 
     if reconstructed_frame:
-        logger.debug(f"Raw frame reassembled for {devEUI}: {reconstructed_frame.hex()}")
+        logger.debug(f"Raw frame reassembled for DevEUI {devEUI}: {reconstructed_frame.hex()}")
 
-        decoded = decoder["te_decoder"](list(reconstructed_frame),DATA_FPORT)
 
-        logger.info(f"Frame reassembled and decoded for {devEUI}: {decoded}")
+        # Example: Call myFunction("hello", "world") in JS
+        result = call_js_function(task_queue, result_queue, "te_decoder", list(reconstructed_frame),10)
+        decoded = ast.literal_eval(node_or_string=str(result))
 
-        match config["output"]["type"]:
-            case "mqtt":
-                send_mqtt_message(decoded)
-            case "http":
-                send_http_request(decoded)
+        logger.info(f"Frame reassembled and decoded for DevEUI {devEUI}: {decoded}")
+
+        if config["output"]["mqtt"]["enable"] == True:
+            send_mqtt_message(devEUI, decoded)
+        if config["output"]["http"]["enable"] == True:
+            send_http_request(decoded)
+
     else:
         logger.debug("Tried to process a devEUI that didn't have any frame...")
 
@@ -131,7 +157,7 @@ def frame_timeout_checker():
                 # Check if last frame received is still fresh enough
                 if frame_list and (time.time() - frame_list[-1]["received_time"] > (TIMEOUT_VALUE * 3600)):
                     to_be_deleted.append(devEUI)
-                    logger.warning(f"Didn't received any new chunk from {devEUI} for {TIMEOUT_VALUE}, flushing all its pending fragment...")
+                    logger.warning(f"Didn't received any new chunk from DevEUI {devEUI} for {TIMEOUT_VALUE} hours, flushing all its pending fragment...")
 
             # Delete afterwards, as dict cannot be deleted while iterating
             for devEUI in to_be_deleted:
@@ -187,8 +213,8 @@ def on_mqtt_message(client, userdata, message: mqtt.MQTTMessage):
             else:
                 frame_buffer[frame["devEUI"]] = [frame]
 
-            # if frame["fPort"] == LAST_FRAGMENT_FPORT:
-            #     process_frame(frame["devEUI"])
+            if frame["fPort"] == LAST_FRAGMENT_FPORT:
+                process_frame(frame["devEUI"])
 
 
 
@@ -212,10 +238,10 @@ flask_app = Flask(__name__)
 #### MQTT ####
 
 # MQTT : Publish
-def send_mqtt_message(frame):
-    client_output.publish(config["output"]["mqtt"]["topic"], frame)
-    client_output.disconnect()
-
+def send_mqtt_message(devEUI: str, frame: dict):
+    logger.debug(f"Publishing decoded frame for DevEUI {devEUI} to MQTT")
+    client_output.publish(config["output"]["mqtt"]["topic"]+f"/{devEUI}", json.dumps(frame))
+    
 #### HTTP ####
 
 def send_http_request(frame):
@@ -239,6 +265,11 @@ if config["local-broker"]["enable"] == True:
         stdout, stderr = mosquitto_process.communicate()
         print(stderr.decode("utf-8"))
 
+
+
+
+# Init Javascript decoder
+process, task_queue, result_queue = start_js_worker()
 
 
 # Init input
@@ -298,7 +329,8 @@ while True:
         time.sleep(1)
     except KeyboardInterrupt:
         print("Shutting down...")
-        
+        stop_js_worker()
+
         if config["local-broker"]["enable"] == True:
             stop_mosquitto(mosquitto_process) # type: ignore
 
