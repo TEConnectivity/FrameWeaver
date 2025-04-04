@@ -5,5 +5,6 @@ Still in developpement phase.
 
 # TODO :
 - HTTP Input/Output
-- Fix reassembling
+- Split main.py into relevant parts
+- Containerization
 - Tests
