@@ -1,18 +1,25 @@
 import ast
+import asyncio
+import datetime
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 import requests
 import threading
 import time
 import logging
-from flask import Flask, request, jsonify
+
+from flask import Flask, abort, render_template, jsonify
+from asgiref.wsgi import WsgiToAsgi
+import uvicorn
+import signal
+
 from typing import TypedDict
 import js_fetcher  # Import the fetcher script
 import base64 as b64
 import subprocess
 import json
 import multiprocessing
-
+import copy
 
 from validate_config import export_config
 
@@ -62,6 +69,7 @@ DATA_FPORT = 10 # port used to trigger decoder to look like the frame is whole
 TIMEOUT_VALUE = config["frame"]["timeout"]
 MAX_CHUNKS = config["frame"]["max_chunks"]
 
+exit_event = threading.Event()
 
 
 
@@ -95,7 +103,7 @@ def start_mosquitto():
     try:
         # This will start Mosquitto in the background
         process = subprocess.Popen(["mosquitto"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        logger.info("Mosquitto broker started.")
+        logger.info("Self-hosted MQTT broker started.")
         return process
     except Exception as e:
         logger.critical(f"Error starting Self-hosted MQTT Broker: {e}")
@@ -105,7 +113,7 @@ def start_mosquitto():
 def stop_mosquitto(process):
     if process:
         process.terminate()
-        print("Mosquitto broker stopped.")
+        logger.info("Self-hosted MQTT broker stopped.")
 
 
 ######## FRAME PROCESSING #########
@@ -115,7 +123,7 @@ def reassemble_frame(devEUI: str):
     global frame_buffer
     if frame_buffer[devEUI]:
         reconstructed_frame = b''.join([frame["raw"] for frame in frame_buffer[devEUI]])
-        frame_buffer[devEUI].clear()
+        del frame_buffer[devEUI]
         return reconstructed_frame
     return None
 
@@ -143,7 +151,7 @@ def process_frame(devEUI: str):
         logger.debug("Tried to process a devEUI that didn't have any frame...")
 
 def frame_timeout_checker():
-    while True:
+    while exit_event.is_set():
         time.sleep(10)
         with frame_lock:
             logger.debug(f"Frame buffer content : {frame_buffer}")
@@ -222,15 +230,35 @@ def on_mqtt_message(client, userdata, message: mqtt.MQTTMessage):
 
 flask_app = Flask(__name__)
 
-# @flask_app.route("/input", methods=["POST"])
-# def receive_http_chunk():
-#     chunk = request.json.get("chunk", "")
-#     with frame_lock:
-#         frame_buffer.append(chunk)
-#         if len(frame_buffer) >= config["frame"]["max_chunks"]:
-#             process_frame()
-#     return jsonify({"status": "received"}), 200
 
+def start_flask():
+    http_server.run()
+
+@flask_app.route("/input", methods=["POST"])
+def receive_http_chunk():
+    if config["input"]["http"]["enable"] == False:
+        abort(404)
+
+    # chunk = request.json.get("chunk", "")
+    # with frame_lock:
+    #     frame_buffer.append(chunk)
+    #     if len(frame_buffer) >= config["frame"]["max_chunks"]:
+    #         process_frame("AA")
+    return jsonify({"status": "received"}), 200
+
+
+@flask_app.route("/monitor", methods=["GET"])
+def monitor_buffer():
+    table_data = copy.deepcopy(frame_buffer)
+
+    for frame_list in table_data.values():
+        for frame in frame_list:
+            frame["received_time_str"] = datetime.datetime.fromtimestamp(frame["received_time"]).strftime("%Y-%m-%d %H:%M:%S") # type: ignore
+            frame["raw_hex"] =  frame["raw"].hex() # type: ignore
+
+
+    result = render_template("monitor.html",data=table_data)
+    return result, 200
 
 ######### OUTPUT #########
 
@@ -284,8 +312,17 @@ if config["input"]["mqtt"]["enable"] == True:
         exit()
     mqtt_client.subscribe(config["input"]["mqtt"]["topic"])
     mqtt_client.loop_start()
-if config["input"]["http"]["enable"] == True:
-    threading.Thread(target=lambda: flask_app.run(host=config["input"]["http"]["host"], port=config["input"]["http"]["port"])).start()
+
+
+
+asgi_flask_app = WsgiToAsgi(flask_app)
+http_server = uvicorn.Server(uvicorn.Config(asgi_flask_app, host=config["input"]["http"]["host"], port=config["input"]["http"]["port"]))
+
+# flask_thread = threading.Thread(target=lambda: flask_app.run(host=config["input"]["http"]["host"], port=config["input"]["http"]["port"]))
+flask_thread = threading.Thread(target=start_flask,  daemon=True)
+flask_thread.start()
+logger.info("HTTP Server started...")
+
 
 if config["input"]["http"]["enable"] == False and config["input"]["mqtt"]["enable"] == False:
     logger.critical("At least one input should be selected. Please check config.")
@@ -306,7 +343,8 @@ if config["output"]["http"]["enable"] == True:
 
 
 # Timeout checker thread
-threading.Thread(target=frame_timeout_checker, daemon=True).start()
+timeout_thread = threading.Thread(target=frame_timeout_checker, daemon=True)
+timeout_thread.start()
 
 
 
@@ -323,15 +361,23 @@ def frame_checker():
 
 logger.info("Application started and waiting for input...")
 
-# Keep the main thread alive
-while True:
-    try:
-        time.sleep(1)
-    except KeyboardInterrupt:
-        print("Shutting down...")
-        stop_js_worker()
+async def main():
+    # Keep the main thread alive
+    while True:
+        try:
+            time.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+            stop_js_worker()
 
-        if config["local-broker"]["enable"] == True:
-            stop_mosquitto(mosquitto_process) # type: ignore
+            if config["local-broker"]["enable"] == True:
+                stop_mosquitto(mosquitto_process) # type: ignore
 
-        exit()
+            exit_event.set() 
+
+            time.sleep(1) # Allow time for all thread to end properly
+            exit(0)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>DataTables Example</title>
+    <!-- DataTables CSS -->
+    <link href="/static/datatables.min.css" rel="stylesheet">
+</head>
+
+<body>
+
+    <h2>List of pending fragments</h2>
+    <p>If the table is empty, it means that there are no pending frames to be re-assembled.</p>
+
+    <table id="example" class="display" style="width:100%">
+        <thead>
+            <tr>
+                <th>DevEUI</th>
+                <th>Number of fragment</th>
+                <th>Last fragment time</th>
+                <th>Fragments</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for DevEUI, frame_list in data.items() %}
+            <tr>
+                <td>{{ DevEUI }}</td>
+                <td>{{ frame_list | length }}</td>
+                <td>{{ frame_list[-1]["received_time_str"] }}</td>
+
+                <td>{{ frame_list | map(attribute="raw_hex") | join(", ") }}</td>
+            </tr>
+            {% endfor %}
+            <!-- Add more rows as needed -->
+        </tbody>
+    </table>
+
+    <!-- Datatables JS -->
+    <script src="/static/datatables.min.js"></script>
+
+    <script>
+        $(document).ready(function () {
+            $('#example').DataTable();  // Enables filtering, sorting, pagination
+        });
+    </script>
+
+</body>
+
+</html>
