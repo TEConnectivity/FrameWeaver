@@ -1,4 +1,6 @@
 paho.mqtt
 pythonmonkey
 flask
+asgiref
+uvicorn
 cerberus
