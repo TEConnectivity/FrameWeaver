@@ -6,3 +6,4 @@ class Frame(TypedDict):
     devEUI: str
     fPort: int
     received_time: float
+

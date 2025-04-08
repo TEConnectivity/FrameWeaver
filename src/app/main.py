@@ -1,6 +1,7 @@
 import ast
 import asyncio
 import datetime
+import os
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 import requests
@@ -15,15 +16,20 @@ import json
 import copy
 
 # Project import
-from ttn import parse_ttn
-from loriot import parse_loriot
-from schemas import Frame
-from validate_config import export_config
-import js_fetcher  # Import the fetcher script
-import self_broker
+from lib.ttn import parse_ttn
+from lib.loriot import parse_loriot
+from lib.schemas import Frame
+from lib.validate_config import export_config
+import lib.js_fetcher as js_fetcher  # Import the fetcher script
+import lib.self_broker as self_broker
 
 try:
-    config = export_config()
+    # Run validation
+    if os.getenv("ENV") == "dev":
+        config_file = "config_dev.yaml"
+    else:
+        config_file = "config.yaml"
+    config = export_config(config_file)
 except:
     exit()
 
@@ -263,7 +269,7 @@ if config["input"]["mqtt"]["enable"] == True:
 asgi_flask_app = WsgiToAsgi(flask_app)
 http_server = uvicorn.Server(uvicorn.Config(asgi_flask_app, host=config["input"]["http"]["host"], port=config["input"]["http"]["port"]))
 
-# flask_thread = threading.Thread(target=lambda: flask_app.run(host=config["input"]["http"]["host"], port=config["input"]["http"]["port"]))
+# flask_thread = threading.Thread(target=lambda: flask_run(host=config["input"]["http"]["host"], port=config["input"]["http"]["port"]))
 flask_thread = threading.Thread(target=start_flask,  daemon=True)
 flask_thread.start()
 logger.info("HTTP Server started...")

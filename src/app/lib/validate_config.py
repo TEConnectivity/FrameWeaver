@@ -108,16 +108,12 @@ def validate_config(config):
     return True
 
 
-def export_config():
-    # Run validation
-    if os.getenv("ENV") == "dev":
-        config_file = "config_dev.yaml"
-    else:
-        config_file = "config.yaml"
-    config = load_yaml_config(config_file)
+def export_config(path: str):
+
+    config = load_yaml_config(path)
     if validate_config(config) == False:
         raise Exception
     return config
 
 if __name__ == "__main__":
-    print(export_config())
+    print(export_config("config.yml"))

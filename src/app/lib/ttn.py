@@ -1,10 +1,10 @@
 # Reference : https://www.thethingsindustries.com/docs/integrations/other-integrations/mqtt/
 import time, base64 as b64, logging
-from schemas import Frame
+from . import schemas
 
 logger = logging.getLogger(__name__)
 
-def parse_ttn(chunk: dict) -> Frame | None:
+def parse_ttn(chunk: dict) -> schemas.Frame | None:
     try:
         fport = chunk["uplink_message"]["f_port"]
         raw_str = chunk["uplink_message"]["frm_payload"]

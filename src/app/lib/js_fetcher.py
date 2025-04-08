@@ -4,7 +4,7 @@ import signal
 
 def js_worker(task_queue, result_queue):
     """Process that listens for tasks and executes JS functions."""
-    decoder = pm.require("../submodules/ttn-decoder/TnnJsDecoder/TE_TtnDecoder.js")
+    decoder = pm.require("../../submodules/ttn-decoder/TnnJsDecoder/TE_TtnDecoder.js")
 
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     while True:
