@@ -11,18 +11,16 @@ import logging
 from flask import Flask, abort, render_template, jsonify
 from asgiref.wsgi import WsgiToAsgi
 import uvicorn
-import signal
-
-from typing import TypedDict
-import js_fetcher  # Import the fetcher script
-import base64 as b64
-import subprocess
 import json
-import multiprocessing
 import copy
 
+# Project import
+from ttn import parse_ttn
+from loriot import parse_loriot
+from schemas import Frame
 from validate_config import export_config
-
+import js_fetcher  # Import the fetcher script
+import self_broker
 
 try:
     config = export_config()
@@ -49,17 +47,17 @@ logger = logging.getLogger(__name__)
 client_output = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
 
 
-class Frame(TypedDict):
-    raw: bytes
-    devEUI: str
-    fPort: int
-    received_time: float
+
 
 # Global var
 
 # Holding DevEUI - list Frame mapping
 frame_buffer: dict[str,list[Frame]] = {}
 frame_lock = threading.Lock()
+exit_event = threading.Event()
+
+
+# CONST
 
 # Valid for MP
 FRAGMENT_FPORT = 138
@@ -69,51 +67,9 @@ DATA_FPORT = 10 # port used to trigger decoder to look like the frame is whole
 TIMEOUT_VALUE = config["frame"]["timeout"]
 MAX_CHUNKS = config["frame"]["max_chunks"]
 
-exit_event = threading.Event()
 
 
 
-####### Javascript interface #######
-
-def start_js_worker():
-    """Start the JS worker process and return the queues and process."""
-    task_queue = multiprocessing.Queue()
-    result_queue = multiprocessing.Queue()
-    
-    worker_process = multiprocessing.Process(target=js_fetcher.js_worker, args=(task_queue, result_queue))
-    worker_process.start()
-
-    return worker_process, task_queue, result_queue
-
-def stop_js_worker():
-    # Stop the fetcher process
-    task_queue.put("STOP")
-    process.join()
-
-def call_js_function(task_queue, result_queue, func_name, *args):
-    """Send a JS function call request and get the result."""
-    task_queue.put((func_name, args))  # Send function and args
-    return result_queue.get()  # Receive result
-
-
-######## MOSQUITTO #########
-
-# Run mosquitto as a subprocess
-def start_mosquitto():
-    try:
-        # This will start Mosquitto in the background
-        process = subprocess.Popen(["mosquitto"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        logger.info("Self-hosted MQTT broker started.")
-        return process
-    except Exception as e:
-        logger.critical(f"Error starting Self-hosted MQTT Broker: {e}")
-        return None
-
-# Stop mosquitto (kill the process)
-def stop_mosquitto(process):
-    if process:
-        process.terminate()
-        logger.info("Self-hosted MQTT broker stopped.")
 
 
 ######## FRAME PROCESSING #########
@@ -135,9 +91,7 @@ def process_frame(devEUI: str):
     if reconstructed_frame:
         logger.debug(f"Raw frame reassembled for DevEUI {devEUI}: {reconstructed_frame.hex()}")
 
-
-        # Example: Call myFunction("hello", "world") in JS
-        result = call_js_function(task_queue, result_queue, "te_decoder", list(reconstructed_frame),10)
+        result = js_fetcher.call_js_function(task_queue, result_queue, "te_decoder", list(reconstructed_frame),10)
         decoded = ast.literal_eval(node_or_string=str(result))
 
         logger.info(f"Frame reassembled and decoded for DevEUI {devEUI}: {decoded}")
@@ -171,28 +125,15 @@ def frame_timeout_checker():
             for devEUI in to_be_deleted:
                 del frame_buffer[devEUI]
 
-######## LNS Parsing ###########
-
-# Reference : https://www.thethingsindustries.com/docs/integrations/other-integrations/mqtt/
-def parse_ttn(chunk) -> Frame:
-    fport = chunk["uplink_message"]["f_port"]
-    raw_str = chunk["uplink_message"]["frm_payload"]
-    raw = b64.b64decode(raw_str)
-    dev_eui = chunk["end_device_ids"]["dev_eui"]
-    chunk_time = time.time()
-
-    return {"devEUI": dev_eui, "fPort": fport, "raw":raw, "received_time":chunk_time}
-
-def parse_loriot(chunk) -> Frame: # type: ignore
-    # TODO
-    pass
-
-
 
 ######### INPUT #########
 
 
 #### MQTT ####
+
+# Loriot : directly output on the topic itself, no subtopic used.
+# TTN : Need to subscribe to v3/{application id}@{tenant id}/devices/{device id}/up
+
 
 # MQTT : On message callback
 def on_mqtt_message(client, userdata, message: mqtt.MQTTMessage):
@@ -210,8 +151,12 @@ def on_mqtt_message(client, userdata, message: mqtt.MQTTMessage):
         case "loriot":
             frame = parse_loriot(chunk)
         case _:
-            logger.critical("This LNS is not supported, exiting...")
+            logger.critical("This LNS is not supported, check config.yaml, exiting...")
             exit()
+
+    if not frame:
+        logger.debug("Could not decode the MQTT received.")
+        return None
 
     # We don't care about non fragmented frames
     if frame["fPort"] in {FRAGMENT_FPORT, LAST_FRAGMENT_FPORT}:
@@ -281,7 +226,7 @@ def send_http_request(frame):
 
 # Init self broker
 if config["local-broker"]["enable"] == True:
-    mosquitto_process = start_mosquitto()
+    mosquitto_process = self_broker.start_mosquitto()
 
     if mosquitto_process is None:
         exit()
@@ -297,7 +242,7 @@ if config["local-broker"]["enable"] == True:
 
 
 # Init Javascript decoder
-process, task_queue, result_queue = start_js_worker()
+js_worker_process, task_queue, result_queue = js_fetcher.start_js_worker()
 
 
 # Init input
@@ -347,31 +292,18 @@ timeout_thread = threading.Thread(target=frame_timeout_checker, daemon=True)
 timeout_thread.start()
 
 
-
-def frame_checker():
-    while True:
-        time.sleep(2)
-        for devEUI, frame_list in frame_buffer.items():
-            for frame in frame_list:
-                if frame["fPort"] == LAST_FRAGMENT_FPORT:
-                    process_frame(devEUI)
-
-
-
-
-logger.info("Application started and waiting for input...")
-
 async def main():
+    logger.info("Application started and waiting for input...")
     # Keep the main thread alive
     while True:
         try:
             time.sleep(1)
         except KeyboardInterrupt:
             logger.info("Shutting down...")
-            stop_js_worker()
+            js_fetcher.stop_js_worker(task_queue, js_worker_process)
 
             if config["local-broker"]["enable"] == True:
-                stop_mosquitto(mosquitto_process) # type: ignore
+                self_broker.stop_mosquitto(mosquitto_process) # type: ignore
 
             exit_event.set() 
 
@@ -381,3 +313,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
