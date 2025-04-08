@@ -13,6 +13,8 @@
     <h2>List of pending fragments</h2>
     <p>If the table is empty, it means that there are no pending frames to be re-assembled.</p>
 
+    <button id="refreshBtn">Refresh Page</button>
+
     <table id="example" class="display" style="width:100%">
         <thead>
             <tr>
@@ -42,6 +44,11 @@
     <script>
         $(document).ready(function () {
             $('#example').DataTable();  // Enables filtering, sorting, pagination
+        });
+
+
+        $('#refreshBtn').click(function () {
+            location.reload();
         });
     </script>
 
