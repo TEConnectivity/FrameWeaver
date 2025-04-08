@@ -6,7 +6,7 @@ input:
     port: 1883
     topic: "v3/{APP_ID@TENANT_ID}/devices/#" 
 
-    # Auth is optional. If no auth is needed, remove the key.
+    # Auth is optional. If no auth is needed, remove this.
     auth:
       username: "username"
       password: "password"
@@ -30,7 +30,6 @@ output:
 local-broker:
   enable: false
 
-
 frame:
   max_chunks: 15  # Maximum number of chunk authorized for a sensor
   timeout: 48  # Timeout (hours) before buffer flushing for a given sensor
@@ -38,6 +37,3 @@ frame:
 
 log:
   level: debug # valid options : debug, info, warning, error, critical
-
-
-# TTN : https://www.thethingsindustries.com/docs/integrations/other-integrations/mqtt/
