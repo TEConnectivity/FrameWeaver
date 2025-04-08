@@ -1,0 +1,19 @@
+{
+    "cmd": "rx",
+    "seqno": 4,
+    "EUI": "BCAF9100004DA780",
+    "ts": 1744038952034,
+    "fcnt": 4,
+    "port": 202,
+    "freq": 867300000,
+    "rssi": -34,
+    "snr": 10.2,
+    "toa": 1483,
+    "dr": "SF12 BW125 4/5",
+    "ack": false,
+    "bat": 251,
+    "offline": false,
+    "confirmed": true,
+    "devaddr": "3180257B",
+    "data": "d0001a8003600142002880051800cd0019c0033c00cd0019b0033800cd0019a8033600"
+}
