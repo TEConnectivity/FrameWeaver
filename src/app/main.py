@@ -111,14 +111,14 @@ def process_frame(devEUI: str):
         logger.debug("Tried to process a devEUI that didn't have any frame...")
 
 def frame_timeout_checker():
-    while exit_event.is_set():
+    while not exit_event.is_set():
         time.sleep(10)
         with frame_lock:
             logger.debug(f"Frame buffer content : {frame_buffer}")
             to_be_deleted = []
             for devEUI, frame_list in frame_buffer.items():
 
-                if len(frame_list) >= config["frame"]["max_chunks"]:
+                if len(frame_list) > config["frame"]["max_chunks"]:
                     logger.warning(f"Received more than configured {MAX_CHUNKS} chunk from {devEUI}, flushing all its pending fragments...")
                     to_be_deleted.append(devEUI)
 

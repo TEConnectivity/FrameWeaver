@@ -11,6 +11,5 @@ A Web Interface is available to monitor which frames are pending for which devic
 
 # TODO :
 - HTTP Input/Output
-- Split main.py into relevant parts
 - Containerization
 - Tests
