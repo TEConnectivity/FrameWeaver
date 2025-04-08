@@ -4,3 +4,5 @@ flask
 asgiref
 uvicorn
 cerberus
+requests
+pyyaml

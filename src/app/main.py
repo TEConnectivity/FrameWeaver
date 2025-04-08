@@ -1,5 +1,4 @@
 import ast
-import asyncio
 import datetime
 import os
 import paho.mqtt.client as mqtt
@@ -23,6 +22,10 @@ from lib.validate_config import export_config
 import lib.js_fetcher as js_fetcher  # Import the fetcher script
 import lib.self_broker as self_broker
 
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 try:
     # Run validation
     if os.getenv("ENV") == "dev":
@@ -30,8 +33,11 @@ try:
     else:
         config_file = "config.yaml"
     config = export_config(config_file)
-except:
+except Exception as e:
+    logger.error("Fail to parse config.yaml, verify if file exist and its content")
     exit()
+
+
 
 match config["log"]["level"]:
     case "debug":
@@ -47,8 +53,10 @@ match config["log"]["level"]:
     case _: # Default
         log_level = logging.INFO
 
-logging.basicConfig(level=log_level)
-logger = logging.getLogger(__name__)
+logger.setLevel(log_level)
+
+
+
 
 client_output = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
 
@@ -298,7 +306,7 @@ timeout_thread = threading.Thread(target=frame_timeout_checker, daemon=True)
 timeout_thread.start()
 
 
-async def main():
+def main():
     logger.info("Application started and waiting for input...")
     # Keep the main thread alive
     while True:
@@ -318,5 +326,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
     
