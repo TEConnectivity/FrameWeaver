@@ -1,12 +1,12 @@
 # Reference : https://www.thethingsindustries.com/docs/integrations/other-integrations/mqtt/
 import time, base64 as b64, logging
-from schemas import Frame
+from . import schemas
 
 logger = logging.getLogger(__name__)
 
 
 # Reference : https://docs.loriot.io/space/NMS/6032848/Uplink+Data+Message
-def parse_loriot(chunk: dict) -> Frame | None: # type: ignore
+def parse_loriot(chunk: dict) -> schemas.Frame | None: # type: ignore
     try:
         if chunk["cmd"] != "rx":
             return None
