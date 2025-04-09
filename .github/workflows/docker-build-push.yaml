@@ -34,9 +34,13 @@ jobs:
         id: meta
         run: echo "REPO=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
 
+      - name: Extract repository lowercase name
+        id: repo_lowercase
+        run: echo "REPO_LOWERCASE=${GITHUB_REPOSITORY@L}" >> $GITHUB_ENV # Print the repo as lowercase in env variables, needed for GHCR 
+
       - name: Build and Push Docker image
         uses: docker/build-push-action@v6
         with:
           context: ./src
           push: false
-          tags: ghcr.io/${{ github.repository_owner }}/frameweaver:latest
+          tags: ghcr.io/${{ env.REPO_LOWERCASE }}/frameweaver:latest
