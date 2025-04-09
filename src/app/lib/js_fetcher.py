@@ -1,3 +1,4 @@
+import ast
 from multiprocessing import Queue, Process
 import pythonmonkey as pm
 import signal
@@ -47,3 +48,8 @@ def call_js_function(task_queue, result_queue, func_name, *args):
     """Send a JS function call request and get the result."""
     task_queue.put((func_name, args))  # Send function and args
     return result_queue.get()  # Receive result
+
+def decode(task_queue, result_queue, raw: bytes, fPort: int) -> dict:
+    result = call_js_function(task_queue, result_queue, "te_decoder", list(raw),10)
+    decoded = ast.literal_eval(node_or_string=str(result))
+    return decoded
