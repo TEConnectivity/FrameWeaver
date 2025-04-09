@@ -27,5 +27,9 @@ ENV FLASK_ENV=production
 # Set the working directory
 WORKDIR /app/app
 
+LABEL org.opencontainers.image.source=https://github.com/TEConnectivity/FrameWeaver
+LABEL org.opencontainers.image.description="FrameWeaver"
+LABEL org.opencontainers.image.licenses=MIT
+
 # Command to run the app
 CMD ["python", "main.py"]
