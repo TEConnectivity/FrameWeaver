@@ -14,9 +14,9 @@ Each LNS got his specific format. Frameweaver cannot be compatible with every LN
 
 ## Input
 
-The following input are avaiable :
+The following input are available :
 
-- MQTT : Listen from incoming MQTT messages from the specified Topic. Can be connected to a remote MQTT broker or the self-hosted.
+- MQTT : Listen from incoming MQTT messages from the specified Topic. Can be connected to a remote MQTT broker or the self-hosted one.
 
 
 ## Output
@@ -25,9 +25,13 @@ TODO
 
 ## Hosted MQTT Broker
 
-If no MQTT Broker are available on the network, Frameweaver can host it. To make use of it, configure the MQTT input&output to `localhost` 
+If no MQTT Broker are available on the network, Frameweaver can host it. To make use of it, configure the MQTT input & output to `localhost` 
 
 # Docker usage
+
+An image is already available to be used, hosted on Github Container Registry :
+
+    docker run -p 1883:1883 -p 8080:8080 ghcr.io/teconnectivity/frameweaver
 
 ## Build instructions
 
