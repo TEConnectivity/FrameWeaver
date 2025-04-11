@@ -62,7 +62,7 @@ def get_max_chunk():
 ######## FRAME PROCESSING #########
     
 # Reassemble frames
-def reassemble_frame(devEUI: str):
+def reassemble_frame(devEUI: str) -> bytes | None:
     global frame_buffer
     if devEUI in frame_buffer:
         reconstructed_frame = b''.join([frame["raw"] for frame in frame_buffer[devEUI]])
@@ -91,6 +91,7 @@ def process_frame(devEUI: str):
     
     else:
         logger.debug("Tried to process a devEUI that didn't have any frame...")
+        return -1
 
 def frame_timeout_checker():
     while not exit_event.is_set():
@@ -228,6 +229,9 @@ def load_config() -> dict:
 
 def launch():
     global config, js_worker_process, task_queue, result_queue
+
+
+    ######## CONFIG
     config = load_config()
 
     match config["log"]["level"]:
@@ -247,9 +251,12 @@ def launch():
     logger.setLevel(log_level)
 
 
+    ########### Javascript
     js_worker_process, task_queue, result_queue = js_fetcher.start_js_worker()
 
-    # Init self broker
+
+
+    ########## SELF BROKER
     if config["local-broker"]["enable"] == True:
         mosquitto_process = self_broker.start_mosquitto()
 
@@ -265,7 +272,7 @@ def launch():
 
 
 
-    # Init input
+    ########## Init input
     if config["input"]["mqtt"]["enable"] == True:
         mqtt_client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
         mqtt_client.on_message = on_mqtt_message
@@ -291,7 +298,7 @@ def launch():
     logger.info("HTTP Server started...")
 
 
-    #### Init output
+    ##### Init output
     if config["output"]["mqtt"]["enable"] == True:
         try:
             client_output.connect(config["output"]["mqtt"]["host"], config["output"]["mqtt"]["port"])
@@ -305,13 +312,10 @@ def launch():
 
 
 
-    # Timeout checker thread
+    ######## Timeout checker thread
     timeout_thread = threading.Thread(target=frame_timeout_checker, daemon=True)
     timeout_thread.start()
         
-
-
-
 
     logger.info("Application started and waiting for input...")
     

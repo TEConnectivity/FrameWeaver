@@ -67,7 +67,17 @@ A Web Interface is available to monitor which frames are pending for which devic
 
 ![monitor screenshot](images/monitor.png)
 
+# Software architecture
+
+![sw arch](images/arch.png)
+
+
+# Test
+
+Tests should always be run inside the `tests` folder for proper initialization.
+
 # Roadmap
 
 - HTTP Input/Output
+- Do some modularization to allow interfacing multiple decoders
 - Tests
