@@ -10,13 +10,13 @@ os.chdir(os.path.dirname(__file__))
 
 from main import frame_buffer, exit_event
 
-# @pytest.fixture(autouse=True)
-# def clear_frame_buffer():
-#     """
-#     Vide le frame_buffer avant chaque test pour garantir un état propre.
-#     """
-#     frame_buffer.clear()
-#     yield
+@pytest.fixture(autouse=True)
+def clear_frame_buffer():
+    """
+    Vide le frame_buffer avant chaque test pour garantir un état propre.
+    """
+    frame_buffer.clear()
+    yield
 
 @pytest.fixture(autouse=True)
 def exit_event_unset():

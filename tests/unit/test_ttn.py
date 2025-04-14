@@ -8,7 +8,6 @@ from lib.ttn import parse_ttn
 import json
 import os
 
-print("HEY ", os.getcwd())
 
 
 frame = {"raw": bytes.fromhex("152f000408630b3e81000c000000060000180000000400010000d0001c0003c000d0001b00038000"), "devEUI":"4200000000000000","fPort":138,"received_time":10}

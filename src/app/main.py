@@ -17,7 +17,7 @@ import copy
 # Project import
 from lib.ttn import parse_ttn
 from lib.loriot import parse_loriot
-from lib.schemas import Frame
+from lib.schemas import Frame, InvalidFrame, InvalidJSON, JSWorkerFail
 from lib.validate_config import export_config
 import lib.js_fetcher as js_fetcher  # Import the fetcher script
 import lib.self_broker as self_broker
@@ -31,7 +31,7 @@ js_worker_process, task_queue, result_queue = None, None, None
 
 
 
-client_output = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+client_mqtt_output = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
 
 
 
@@ -50,6 +50,13 @@ exit_event = threading.Event()
 FRAGMENT_FPORT = 138
 LAST_FRAGMENT_FPORT = 202
 DATA_FPORT = 10 # port used to trigger decoder to look like the frame is whole
+
+TIMEOUT_CHECK_INTERVAL = 10 #second
+
+# Map MQTT error name with enum value
+MQTT_ERROR_NAMES = {v: k for k, v in vars(mqtt).items() if k.startswith("MQTT_ERR_")}
+
+
 
 def get_timeout():
     return config["frame"]["timeout"]
@@ -94,8 +101,9 @@ def process_frame(devEUI: str):
         return -1
 
 def frame_timeout_checker():
+    """ Threaded function checking that a frame is fresh, and number of chunk is not too high  """
     while not exit_event.is_set():
-        time.sleep(10)
+        time.sleep(TIMEOUT_CHECK_INTERVAL)
         with frame_lock:
             logger.debug(f"Frame buffer content : {frame_buffer}")
             to_be_deleted = []
@@ -125,26 +133,12 @@ def frame_timeout_checker():
 
 
 # MQTT : On message callback
-def on_mqtt_message(client, userdata, message: mqtt.MQTTMessage):
+def on_mqtt_message(client, userdata, message: mqtt.MQTTMessage) -> None:
     logger.debug(f"Received MQTT msg on topic: {message.topic}, payload :" + str(message.payload))
     
     try:
-        chunk = json.loads(message.payload)
+        frame = parse_mqtt(message)
     except:
-        logger.error(f"Received an invalid message (not json) from topic {message.topic}: {message.payload}")
-        return None
-
-    match config["frame"]["lns"]:
-        case "ttn":
-            frame = parse_ttn(chunk)
-        case "loriot":
-            frame = parse_loriot(chunk)
-        case _:
-            logger.critical("This LNS is not supported, check config.yaml, exiting...")
-            exit()
-
-    if not frame:
-        logger.debug("Could not decode the MQTT received.")
         return None
 
     # We don't care about non fragmented frames
@@ -157,12 +151,37 @@ def on_mqtt_message(client, userdata, message: mqtt.MQTTMessage):
 
             if frame["fPort"] == LAST_FRAGMENT_FPORT:
                 process_frame(frame["devEUI"])
+    else:
+        logger.debug("Received MQTT frame with non-interesting fPort")
 
+
+def parse_mqtt(message: mqtt.MQTTMessage):
+    try:
+        chunk = json.loads(message.payload)
+    except:
+        logger.error(f"Received an invalid message (not json) from topic {message.topic}: {message.payload}")
+        raise InvalidJSON
+
+    match config["frame"]["lns"]:
+        case "ttn":
+            frame = parse_ttn(chunk)
+        case "loriot":
+            frame = parse_loriot(chunk)
+        case _:
+            logger.critical("This LNS is not supported, check config.yaml, exiting...")
+            exit()
+
+    if not frame:
+        logger.debug("Could not decode the MQTT received.")
+        raise InvalidFrame
+    
+    return frame
 
 
 #### HTTP ####
 
 flask_app = Flask(__name__)
+
 
 
 def start_flask(http_server):
@@ -202,7 +221,12 @@ def monitor_buffer():
 # MQTT : Publish
 def send_mqtt_message(devEUI: str, frame: dict):
     logger.debug(f"Publishing decoded frame for DevEUI {devEUI} to MQTT")
-    client_output.publish(config["output"]["mqtt"]["topic"]+f"/{devEUI}", json.dumps(frame))
+    res = client_mqtt_output.publish(config["output"]["mqtt"]["topic"]+f"/{devEUI}", json.dumps(frame))
+    if res.rc == mqtt.MQTT_ERR_SUCCESS:
+        return True
+    else:
+        logger.error(f"Failed to publish MQTT message: {MQTT_ERROR_NAMES.get(res.rc)}")
+        return False
     
 #### HTTP ####
 
@@ -214,6 +238,8 @@ def send_http_request(frame):
 ###### INIT
 
 def load_config() -> dict:
+    global config 
+
     try:
     # Run validation
         if os.getenv("ENV") == "dev":
@@ -228,51 +254,69 @@ def load_config() -> dict:
 
 
 def launch():
-    global config, js_worker_process, task_queue, result_queue
-
 
     ######## CONFIG
-    config = load_config()
-
-    match config["log"]["level"]:
-        case "debug":
-            log_level = logging.DEBUG
-        case "info":
-            log_level = logging.INFO
-        case "warning":
-            log_level = logging.WARNING
-        case "error":
-            log_level = logging.ERROR
-        case "critical":
-            log_level = logging.CRITICAL
-        case _: # Default
-            log_level = logging.INFO
-
-    logger.setLevel(log_level)
-
-
-    ########### Javascript
-    js_worker_process, task_queue, result_queue = js_fetcher.start_js_worker()
-
-
-
-    ########## SELF BROKER
-    if config["local-broker"]["enable"] == True:
-        mosquitto_process = self_broker.start_mosquitto()
-
-        if mosquitto_process is None:
-            exit()
+    load_config()
+    init_logging()
+    init_javascript()
+    mosquitto_process = init_self_broker()
+    init_input()
+    init_http_server()
+    init_output()
+    init_timeout_checker()
         
-        # Wait 1 sec and check if process is still alive
-        time.sleep(1)
-        if mosquitto_process.poll() is not None:
-            logger.error("Self hosted MQTT Broker could not be started : ")
-            stdout, stderr = mosquitto_process.communicate()
-            print(stderr.decode("utf-8"))
+
+    logger.info("Application started and waiting for input...")
+    
+
+    # Keep the main thread alive
+    while not exit_event.is_set():
+        try:
+            time.sleep(1)
+        except KeyboardInterrupt:
+            shutdown(mosquitto_process)
 
 
 
-    ########## Init input
+
+def shutdown(mosquitto_process):
+    logger.info("Shutting down...")
+
+    if js_worker_process is not None and task_queue is not None:
+        js_fetcher.stop_js_worker(task_queue, js_worker_process)
+
+    if config["local-broker"]["enable"] == True:
+        self_broker.stop_mosquitto(mosquitto_process) # type: ignore
+
+    exit_event.set() 
+
+    time.sleep(1) # Allow time for all thread to end properly
+    exit(0)
+
+def init_timeout_checker():
+    timeout_thread = threading.Thread(target=frame_timeout_checker, daemon=True) 
+    timeout_thread.start()
+
+def init_output():
+    if config["output"]["mqtt"]["enable"] == True:
+        try:
+            client_mqtt_output.connect(config["output"]["mqtt"]["host"], config["output"]["mqtt"]["port"])
+            logger.info("Output Connected to MQTT Broker !")
+        except Exception as e:
+            logger.critical("MQTT Output Failed : Failed to connect to the MQTT Broker : " +  str(e))
+            exit()
+    if config["output"]["http"]["enable"] == True:
+        # TODO Implement HTTP
+        pass
+
+def init_http_server():
+    asgi_flask_app = WsgiToAsgi(flask_app)
+    http_server = uvicorn.Server(uvicorn.Config(asgi_flask_app, host=config["input"]["http"]["host"], port=config["input"]["http"]["port"]))
+    flask_thread = threading.Thread(target=start_flask,args=[http_server], daemon=True)
+    flask_thread.start()
+    logger.info("HTTP Server started...")
+
+def init_input():
     if config["input"]["mqtt"]["enable"] == True:
         mqtt_client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
         mqtt_client.on_message = on_mqtt_message
@@ -289,51 +333,47 @@ def launch():
         logger.critical("At least one input should be selected. Please check config.")
         exit()
 
+def init_self_broker():
+    if config["local-broker"]["enable"] == True:
+        mosquitto_process = self_broker.start_mosquitto()
 
-    ##### HTTP SERVER
-    asgi_flask_app = WsgiToAsgi(flask_app)
-    http_server = uvicorn.Server(uvicorn.Config(asgi_flask_app, host=config["input"]["http"]["host"], port=config["input"]["http"]["port"]))
-    flask_thread = threading.Thread(target=start_flask,args=[http_server], daemon=True)
-    flask_thread.start()
-    logger.info("HTTP Server started...")
-
-
-    ##### Init output
-    if config["output"]["mqtt"]["enable"] == True:
-        try:
-            client_output.connect(config["output"]["mqtt"]["host"], config["output"]["mqtt"]["port"])
-            logger.info("Output Connected to MQTT Broker !")
-        except Exception as e:
-            logger.critical("MQTT Output Failed : Failed to connect to the MQTT Broker : " +  str(e))
+        if mosquitto_process is None:
             exit()
-    if config["output"]["http"]["enable"] == True:
-        # TODO Implement HTTP
-        pass
-
-
-
-    ######## Timeout checker thread
-    timeout_thread = threading.Thread(target=frame_timeout_checker, daemon=True)
-    timeout_thread.start()
         
+        # Wait 1 sec and check if process is still alive
+        time.sleep(1)
+        if mosquitto_process.poll() is not None:
+            logger.error("Self hosted MQTT Broker could not be started : ")
+            stdout, stderr = mosquitto_process.communicate()
+            
+        return mosquitto_process
+    else:
+        return None
 
-    logger.info("Application started and waiting for input...")
-    
-    # Keep the main thread alive
-    while True:
-        try:
-            time.sleep(1)
-        except KeyboardInterrupt:
-            logger.info("Shutting down...")
-            js_fetcher.stop_js_worker(task_queue, js_worker_process)
+def init_javascript():
+    global js_worker_process, task_queue, result_queue
+    js_worker_process, task_queue, result_queue = js_fetcher.start_js_worker()
 
-            if config["local-broker"]["enable"] == True:
-                self_broker.stop_mosquitto(mosquitto_process) # type: ignore
+    if (js_worker_process, task_queue, result_queue) == (None, None, None):
+        logger.error("Fail to initialize JS Worker")
+        exit()
 
-            exit_event.set() 
+def init_logging():
+    match config["log"]["level"]:
+        case "debug":
+            log_level = logging.DEBUG
+        case "info":
+            log_level = logging.INFO
+        case "warning":
+            log_level = logging.WARNING
+        case "error":
+            log_level = logging.ERROR
+        case "critical":
+            log_level = logging.CRITICAL
+        case _: # Default
+            log_level = logging.INFO
 
-            time.sleep(1) # Allow time for all thread to end properly
-            exit(0)
+    logger.setLevel(log_level)
 
 
 if __name__ == "__main__":

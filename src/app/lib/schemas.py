@@ -7,3 +7,12 @@ class Frame(TypedDict):
     fPort: int
     received_time: float
 
+class InvalidJSON(Exception):
+    pass
+
+
+class InvalidFrame(Exception):
+    pass
+
+class JSWorkerFail(Exception):
+    pass
