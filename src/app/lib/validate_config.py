@@ -108,7 +108,7 @@ def validate_config(config):
     return True
 
 
-def export_config(path: str):
+def export_config(path: str) -> dict:
 
     config = load_yaml_config(path)
     if validate_config(config) == False:
