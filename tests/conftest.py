@@ -21,7 +21,7 @@ def clear_frame_buffer():
 @pytest.fixture(autouse=True)
 def exit_event_unset():
     """
-    Vide le frame_buffer avant chaque test pour garantir un état propre.
+    Clear le thread event stop avant chaque test pour garantir un état propre.
     """
     exit_event.clear()
     yield

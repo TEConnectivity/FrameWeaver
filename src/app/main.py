@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 config = {} # Will be loaded after
 js_worker_process, task_queue, result_queue = None, None, None
-
+flask_thread = None
 
 
 client_mqtt_output = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
@@ -169,7 +169,7 @@ def parse_mqtt(message: mqtt.MQTTMessage):
             frame = parse_loriot(chunk)
         case _:
             logger.critical("This LNS is not supported, check config.yaml, exiting...")
-            exit()
+            exit(1)
 
     if not frame:
         logger.debug("Could not decode the MQTT received.")
@@ -250,7 +250,7 @@ def load_config() -> dict:
         return config
     except Exception as e:
         logger.error("Fail to parse config.yaml, verify if file exist and its content")
-        exit()
+        exit(1)
 
 
 def launch():
@@ -298,18 +298,31 @@ def init_timeout_checker():
     timeout_thread.start()
 
 def init_output():
+    global client_mqtt_output
+    print(config)
     if config["output"]["mqtt"]["enable"] == True:
         try:
-            client_mqtt_output.connect(config["output"]["mqtt"]["host"], config["output"]["mqtt"]["port"])
-            logger.info("Output Connected to MQTT Broker !")
+            status_code = client_mqtt_output.connect(config["output"]["mqtt"]["host"], config["output"]["mqtt"]["port"])
+            client_mqtt_output.loop() #process network event
+            if status_code != mqtt.MQTT_ERR_SUCCESS:
+                logger.critical(f"MQTT Output Failed : Failed to connect to the MQTT Broker : {MQTT_ERROR_NAMES.get(status_code)}")
+                exit(1)
+            else:
+                logger.info("Output Connected to MQTT Broker !")
         except Exception as e:
             logger.critical("MQTT Output Failed : Failed to connect to the MQTT Broker : " +  str(e))
-            exit()
+            exit(1)
     if config["output"]["http"]["enable"] == True:
         # TODO Implement HTTP
         pass
 
+    if config["output"]["http"]["enable"] == False and config["output"]["mqtt"]["enable"] == False:
+        logger.critical("At least one input should be selected. Please check config.")
+        exit(1)
+
 def init_http_server():
+    global flask_thread
+
     asgi_flask_app = WsgiToAsgi(flask_app)
     http_server = uvicorn.Server(uvicorn.Config(asgi_flask_app, host=config["input"]["http"]["host"], port=config["input"]["http"]["port"]))
     flask_thread = threading.Thread(target=start_flask,args=[http_server], daemon=True)
@@ -325,20 +338,21 @@ def init_input():
             logger.info("Input Connected to MQTT Broker !")
         except Exception as e:
             logger.critical("MQTT Input Failed : Failed to connect to the MQTT Broker : " +  str(e))
-            exit()
+            exit(1)
         mqtt_client.subscribe(config["input"]["mqtt"]["topic"])
         mqtt_client.loop_start()
+        return mqtt_client
 
     if config["input"]["http"]["enable"] == False and config["input"]["mqtt"]["enable"] == False:
         logger.critical("At least one input should be selected. Please check config.")
-        exit()
+        exit(1)
 
 def init_self_broker():
     if config["local-broker"]["enable"] == True:
         mosquitto_process = self_broker.start_mosquitto()
 
         if mosquitto_process is None:
-            exit()
+            exit(1)
         
         # Wait 1 sec and check if process is still alive
         time.sleep(1)
@@ -356,7 +370,7 @@ def init_javascript():
 
     if (js_worker_process, task_queue, result_queue) == (None, None, None):
         logger.error("Fail to initialize JS Worker")
-        exit()
+        exit(1)
 
 def init_logging():
     match config["log"]["level"]:
