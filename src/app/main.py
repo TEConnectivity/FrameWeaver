@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 config = {} # Will be loaded after
 js_worker_process, task_queue, result_queue = None, None, None
 flask_thread = None
-
+http_server: uvicorn.Server
 
 client_mqtt_output = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
 
@@ -185,7 +185,11 @@ flask_app = Flask(__name__)
 
 
 def start_flask(http_server):
-    http_server.run()
+    try:
+        http_server.run()
+    except:
+        logger.error("Failed to start HTTP server")
+        exit_event.set()
 
 @flask_app.route("/input", methods=["POST"])
 def receive_http_chunk():
@@ -274,13 +278,15 @@ def launch():
         try:
             time.sleep(1)
         except KeyboardInterrupt:
-            shutdown(mosquitto_process)
+            break
 
+    shutdown(mosquitto_process)
 
 
 
 def shutdown(mosquitto_process):
     logger.info("Shutting down...")
+    exit_event.set() 
 
     if js_worker_process is not None and task_queue is not None:
         js_fetcher.stop_js_worker(task_queue, js_worker_process)
@@ -288,9 +294,8 @@ def shutdown(mosquitto_process):
     if config["local-broker"]["enable"] == True:
         self_broker.stop_mosquitto(mosquitto_process) # type: ignore
 
-    exit_event.set() 
 
-    time.sleep(1) # Allow time for all thread to end properly
+    time.sleep(2) # Allow time for all thread to end properly
     exit(0)
 
 def init_timeout_checker():
@@ -321,7 +326,7 @@ def init_output():
         exit(1)
 
 def init_http_server():
-    global flask_thread
+    global flask_thread, http_server
 
     asgi_flask_app = WsgiToAsgi(flask_app)
     http_server = uvicorn.Server(uvicorn.Config(asgi_flask_app, host=config["input"]["http"]["host"], port=config["input"]["http"]["port"]))
@@ -352,6 +357,7 @@ def init_self_broker():
         mosquitto_process = self_broker.start_mosquitto()
 
         if mosquitto_process is None:
+            logger.error("Self hosted MQTT Broker could not be started : ")
             exit(1)
         
         # Wait 1 sec and check if process is still alive
@@ -359,10 +365,16 @@ def init_self_broker():
         if mosquitto_process.poll() is not None:
             logger.error("Self hosted MQTT Broker could not be started : ")
             stdout, stderr = mosquitto_process.communicate()
+            logger.error(stderr)
+            exit(1)
             
         return mosquitto_process
     else:
         return None
+
+def quit():
+    exit()
+
 
 def init_javascript():
     global js_worker_process, task_queue, result_queue

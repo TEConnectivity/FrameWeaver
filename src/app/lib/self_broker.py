@@ -24,3 +24,5 @@ def stop_mosquitto(process):
     if process:
         process.terminate()
         logger.info("Self-hosted MQTT broker stopped.")
+    else:
+        logger.error("Tried to shutdown already stopped mosquitto process...")
