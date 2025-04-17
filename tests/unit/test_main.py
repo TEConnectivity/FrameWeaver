@@ -1,22 +1,25 @@
 import json
 import logging
-import time
-from paho.mqtt.enums import CallbackAPIVersion
-from typing import Any, Callable
-from unittest.mock import MagicMock
-import pytest
 import threading
-import paho.mqtt.client as mqtt
-import requests
+import time
 from copy import deepcopy
-import multiprocessing
+from unittest.mock import MagicMock
 
-from  tests.static import *
+import lib.js_fetcher
 
 # Project import
 import main
+import paho.mqtt.client as mqtt
+import pytest
 from lib.schemas import InvalidJSON
-import lib.js_fetcher
+
+from tests.static import (
+    DATAFORMAT2_BYTES,
+    DATAFORMAT2_DECODED,
+    DATAFORMAT2_HEX,
+    EXAMPLE_CONFIG,
+    FRAME_EXAMPLE,
+)
 
 ######## TEST
 
@@ -24,42 +27,41 @@ import lib.js_fetcher
 @pytest.mark.usefixtures("mock_config")
 class TestReassembleFrame:
     def test_reassemble(self, mock_frame_buffer):
-        res = main.reassemble_frame("CAFE") # return b'152...'
+        res = main.reassemble_frame("CAFE")  # return b'152...'
         assert res is not None
         assert res.decode() == DATAFORMAT2_HEX
+
     def test_reassemble_no_frame(self):
         """Frame buffer is empty"""
         res = main.reassemble_frame("CAFE")
         assert res is None
 
+
 @pytest.mark.usefixtures("mock_config")
 class TestProcessFrame:
     @pytest.mark.mock_patch_reassemble(DATAFORMAT2_BYTES)
-    def test_process_frame_decoded(self, mock_patch_jsdecode,mock_patch_reassemble):
+    def test_process_frame_decoded(self, mock_patch_jsdecode, mock_patch_reassemble):
         assert main.process_frame("CAFE") == DATAFORMAT2_DECODED
 
     @pytest.mark.mock_patch_reassemble(None)
-    def test_process_frame_empty(self, mock_patch_jsdecode,mock_patch_reassemble):
+    def test_process_frame_empty(self, mock_patch_jsdecode, mock_patch_reassemble):
         assert main.process_frame("CAFE") == -1
 
 
-
-
-
-@pytest.mark.usefixtures("mock_frame_buffer","mock_config")
+@pytest.mark.usefixtures("mock_frame_buffer", "mock_config")
 class TestTimeoutChecker:
-
-    @pytest.mark.parametrize("dynamic_config", [{},
-                                                                    {"frame":{"max_chunks":1,"timeout": 1000000000000,"lns": "ttn"}}
-                                                                    ])
-    def test_deletion(self,monkeypatch, dynamic_config):
+    @pytest.mark.parametrize(
+        "dynamic_config",
+        [{}, {"frame": {"max_chunks": 1, "timeout": 1000000000000, "lns": "ttn"}}],
+    )
+    def test_deletion(self, monkeypatch, dynamic_config):
         """Test : deletion cuz timeout, cuz max chunk"""
         main.config.update(dynamic_config)
 
-        monkeypatch.setattr(time, 'sleep', MagicMock(return_value=None))
-        
+        monkeypatch.setattr(time, "sleep", MagicMock(return_value=None))
+
         assert "CAFE" in main.frame_buffer
-        
+
         t = threading.Thread(target=main.frame_timeout_checker)
         t.start()
         main.exit_event.set()
@@ -67,14 +69,16 @@ class TestTimeoutChecker:
 
         assert "CAFE" not in main.frame_buffer
 
-    def test_no_del(self,monkeypatch):
+    def test_no_del(self, monkeypatch):
         """Test : no deletion"""
-        main.config.update( {"frame":{"max_chunks":10,"timeout": 1000000000000,"lns": "ttn"}})
+        main.config.update(
+            {"frame": {"max_chunks": 10, "timeout": 1000000000000, "lns": "ttn"}}
+        )
 
-        monkeypatch.setattr(time, 'sleep', MagicMock(return_value=None))
-        
+        monkeypatch.setattr(time, "sleep", MagicMock(return_value=None))
+
         assert "CAFE" in main.frame_buffer
-        
+
         t = threading.Thread(target=main.frame_timeout_checker)
         t.start()
         main.exit_event.set()
@@ -82,70 +86,60 @@ class TestTimeoutChecker:
 
         assert "CAFE" in main.frame_buffer
 
-                                                                           
-
 
 @pytest.mark.usefixtures("mock_config")
 class TestMQTTInput:
-
-    def test_parse_mqtt(self,monkeypatch):
+    def test_parse_mqtt(self, monkeypatch):
         """Test : Received MQTT Chunk is not JSON"""
-        
+
         mess = mqtt.MQTTMessage(topic=b"input")
         mess.payload = b"badformat"
 
         with pytest.raises(InvalidJSON):
-            main.parse_mqtt( mess)
+            main.parse_mqtt(mess)
 
-
-
-
-    def test_mqtt_input_valid_frame(self,monkeypatch):
+    def test_mqtt_input_valid_frame(self, monkeypatch):
         """Test : Received MQTT JSON is a known frame"""
 
-        monkeypatch.setattr(json, 'loads', MagicMock(return_value=1))
-        monkeypatch.setattr(main, 'parse_ttn', MagicMock(return_value=FRAME_EXAMPLE))
+        monkeypatch.setattr(json, "loads", MagicMock(return_value=1))
+        monkeypatch.setattr(main, "parse_ttn", MagicMock(return_value=FRAME_EXAMPLE))
 
         mess = mqtt.MQTTMessage(topic=b"input")
-        mess.payload = b"whateverformat" # function is patched anyway
-        
+        mess.payload = b"whateverformat"  # function is patched anyway
+
         assert FRAME_EXAMPLE["devEUI"] not in main.frame_buffer
 
-        main.on_mqtt_message(None,None, mess)
+        main.on_mqtt_message(None, None, mess)
 
         assert FRAME_EXAMPLE["devEUI"] in main.frame_buffer
 
-    def test_mqtt_input_valid_frame_wrong_fport(self,monkeypatch):
+    def test_mqtt_input_valid_frame_wrong_fport(self, monkeypatch):
         """Test : Received MQTT JSON is not a known frame"""
 
-        monkeypatch.setattr(json, 'loads', MagicMock(return_value=1))
+        monkeypatch.setattr(json, "loads", MagicMock(return_value=1))
         wrong_fport = FRAME_EXAMPLE
         wrong_fport["fPort"] = 1
-        monkeypatch.setattr(main, 'parse_ttn', MagicMock(return_value=wrong_fport))
+        monkeypatch.setattr(main, "parse_ttn", MagicMock(return_value=wrong_fport))
 
         mess = mqtt.MQTTMessage(topic=b"input")
         mess.payload = b"whateverformat"
-        
-        assert FRAME_EXAMPLE["devEUI"] not in main.frame_buffer
-
-        main.on_mqtt_message(None,None, mess)
 
         assert FRAME_EXAMPLE["devEUI"] not in main.frame_buffer
 
+        main.on_mqtt_message(None, None, mess)
 
-
-
+        assert FRAME_EXAMPLE["devEUI"] not in main.frame_buffer
 
 
 @pytest.mark.usefixtures("mock_config")
 class TestFlaskApp:
-
-    def test_monitor_page_mocked(self,monkeypatch):
+    def test_monitor_page_mocked(self, monkeypatch):
         """Test : Check that monitor page return something"""
 
         HTML_EXPECTED_VALUE = "test_html"
-        monkeypatch.setattr(main, 'render_template', MagicMock(return_value=HTML_EXPECTED_VALUE))
-
+        monkeypatch.setattr(
+            main, "render_template", MagicMock(return_value=HTML_EXPECTED_VALUE)
+        )
 
         client = main.flask_app.test_client()
 
@@ -154,16 +148,13 @@ class TestFlaskApp:
         assert res.text == HTML_EXPECTED_VALUE
 
 
-
-
-
-
 class TestLoadConfig:
-
-    def test_load_config_ok(self,monkeypatch):
+    def test_load_config_ok(self, monkeypatch):
         """Check that config successfuly loaded"""
 
-        monkeypatch.setattr(main, 'export_config', MagicMock(return_value=deepcopy(EXAMPLE_CONFIG)))
+        monkeypatch.setattr(
+            main, "export_config", MagicMock(return_value=deepcopy(EXAMPLE_CONFIG))
+        )
         assert main.load_config() == EXAMPLE_CONFIG
 
     def test_load_config_nofile(self):
@@ -174,9 +165,9 @@ class TestLoadConfig:
             main.load_config()
 
 
-@pytest.mark.parametrize("dynamic_config", [{"log":{"level":"info"}},
-                                                                {"log":{"level":"warning"}}
-                                                                    ])
+@pytest.mark.parametrize(
+    "dynamic_config", [{"log": {"level": "info"}}, {"log": {"level": "warning"}}]
+)
 def test_init_logging(mock_config, dynamic_config):
     """Check log level is correctly initialized depending on config"""
 
@@ -194,28 +185,29 @@ def test_init_javascript(mock_config):
 
     # Cleaning
     main.js_worker_process, main.task_queue, main.result_queue = None, None, None
-    
-    assert (main.js_worker_process, main.task_queue, main.result_queue) == (None, None, None)
+
+    assert (main.js_worker_process, main.task_queue, main.result_queue) == (
+        None,
+        None,
+        None,
+    )
     main.init_javascript()
-    
+
     assert main.js_worker_process is not None
     assert main.task_queue is not None
     assert main.result_queue is not None
-    lib.js_fetcher.stop_js_worker(main.task_queue,main.js_worker_process)
-
+    lib.js_fetcher.stop_js_worker(main.task_queue, main.js_worker_process)
 
 
 class TestInitSelfBroker:
-
-
     def test_init_broker_disabled(self, mock_config):
         """Check that broker is not started if config is false"""
-        main.config.update({"local-broker":{"enable":False}})
+        main.config.update({"local-broker": {"enable": False}})
 
         mosquitto_process = main.init_self_broker()
-        assert mosquitto_process == None
+        assert mosquitto_process is None
 
-        
+
 @pytest.mark.usefixtures("mock_config")
 class TestInitInput:
     def test_init_input_noselection(self):
@@ -238,9 +230,6 @@ class TestInitInput:
             main.init_input()
 
 
-
-
-      
 @pytest.mark.usefixtures("mock_config")
 class TestInitOutput:
     def test_init_output(self):
@@ -252,8 +241,6 @@ class TestInitOutput:
         with pytest.raises(SystemExit):
             main.init_output()
 
-
-
     def test_init_output_mqtt_noconnection(self):
         """Check that mqtt output cannot connect."""
 
@@ -263,9 +250,3 @@ class TestInitOutput:
 
         with pytest.raises(SystemExit):
             main.init_output()
- 
-
-
-
-
-
