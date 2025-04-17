@@ -288,6 +288,8 @@ def shutdown(mosquitto_process):
     logger.info("Shutting down...")
     exit_event.set() 
 
+    http_server.should_exit = True
+
     if js_worker_process is not None and task_queue is not None:
         js_fetcher.stop_js_worker(task_queue, js_worker_process)
 
