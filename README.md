@@ -1,4 +1,7 @@
 # FrameWeaver
+
+[![Tests & Push](https://github.com/TEConnectivity/FrameWeaver/actions/workflows/docker-build-push.yaml/badge.svg)](https://github.com/TEConnectivity/FrameWeaver/actions/workflows/docker-build-push.yaml)
+
 **Still in developpement phase. Not suited for production !**
 
 Process and decode fragmented LoRaWAN frames, receiving data over MQTT or HTTP, and publishing results to custom endpoints. 

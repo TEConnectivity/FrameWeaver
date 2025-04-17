@@ -105,6 +105,9 @@ def test_init_http_server(mock_config):
         == 200
     )
 
+    main.http_server.should_exit = True
+    main.flask_thread.join()
+
 
 def test_launch(monkeypatch):
     """Check that launch func launch every services"""
@@ -121,6 +124,8 @@ def test_launch(monkeypatch):
     )
 
     main.exit_event.set()
+    main.http_server.should_exit = True
+    main.flask_thread.join()
 
 
 def test_shutdown(mock_config):

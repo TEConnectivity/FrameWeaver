@@ -2,6 +2,7 @@
 import time
 from typing import Any, Callable
 
+import psutil
 from lib.schemas import Frame
 
 
@@ -233,6 +234,21 @@ FRAME_EXAMPLE: Frame = {"raw": b"152f000408630b3e81000c0000000600001800000004000
 
 
 
+
+
+def kill_existing_mosquitto():
+    for proc in psutil.process_iter(attrs=['pid', 'name']):
+        if proc.info['name'] == 'mosquitto':
+            proc.terminate()  # Terminate the process
+            proc.wait()  # Wait for the process to shut down
+
+
+def is_mosquitto_process_alive():
+    for proc in psutil.process_iter(attrs=['cmdline', 'net_connections', 'cpu_affinity', 'cpu_num', 'cpu_percent', 'cpu_times', 'create_time', 'cwd', 'environ', 'exe', 'gids', 'io_counters', 'ionice', 'memory_full_info', 'memory_info', 'memory_maps', 'memory_percent', 'name', 'nice', 'num_ctx_switches', 'num_fds', 'num_threads', 'open_files', 'pid', 'ppid', 'status', 'terminal', 'threads', 'uids', 'username']):
+        if proc.info['name'] == 'mosquitto':
+            print("Process ALIVE !:", proc)
+            return True
+    return False
 
 
 
