@@ -75,12 +75,32 @@ A Web Interface is available to monitor which frames are pending for which devic
 ![sw arch](images/arch.png)
 
 
+# Sizing
+
+For the docker deployment, container should have the following sizing :
+
+- CPU : 1 Core
+- RAM : 256 MB
+- Network : 1 Mbps
+- Disk space : No disk usage. Everything is stored in-memory
+
 # Test
 
+Tests dependencies are listed in the `requirements.txt` file under `tests` folder.
 Tests should always be run inside the `tests` folder for proper initialization.
+
+
+# Limitation
+
+Stress tests shows the following :
+    - At very high load (thousands of different devEUI over a minute) : 
+      - Monitor interface can fail because the `frame_buffer` object is being rendered to front-end and modified in same time.
+      - Self-hosted MQTT broker can crash (mosquitto process)
+    - For a very high number of pending fragment (100k different devEUI) : Monitor interface can take up to 1 mn to fully load, because everything is displayed in the front-end.
+
 
 # Roadmap
 
 - HTTP Input/Output
 - Do some modularization to allow interfacing multiple decoders
-- Tests
+- Multi-stage docker to remove NPM dependencies (which add few hundreds of MB to the image size)

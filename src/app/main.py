@@ -144,8 +144,10 @@ def on_mqtt_message(client, userdata, message: mqtt.MQTTMessage) -> None:
     # We don't care about non fragmented frames
     if frame["fPort"] in {FRAGMENT_FPORT, LAST_FRAGMENT_FPORT}:
         with frame_lock:
+
             if frame["devEUI"] in frame_buffer:
                 frame_buffer[frame["devEUI"]].append(frame)
+                logger.info(f"Received fragment from {frame['devEUI']}")
             else:
                 frame_buffer[frame["devEUI"]] = [frame]
 
@@ -172,7 +174,7 @@ def parse_mqtt(message: mqtt.MQTTMessage):
             exit(1)
 
     if not frame:
-        logger.debug("Could not decode the MQTT received.")
+        logger.debug("Could not decode the MQTT received. Check that LNS is the right one in config.yaml.")
         raise InvalidFrame
     
     return frame
@@ -208,13 +210,14 @@ def receive_http_chunk():
 def monitor_buffer():
     table_data = copy.deepcopy(frame_buffer)
 
+
     for frame_list in table_data.values():
         for frame in frame_list:
             frame["received_time_str"] = datetime.datetime.fromtimestamp(frame["received_time"]).strftime("%Y-%m-%d %H:%M:%S") # type: ignore
             frame["raw_hex"] =  frame["raw"].hex() # type: ignore
 
 
-    result = render_template("monitor.html",data=table_data)
+    result = render_template("monitor.html",data=table_data, timeout=get_timeout(), max_chunk=get_max_chunk())
     return result, 200
 
 ######### OUTPUT #########
@@ -224,8 +227,9 @@ def monitor_buffer():
 
 # MQTT : Publish
 def send_mqtt_message(devEUI: str, frame: dict):
-    logger.debug(f"Publishing decoded frame for DevEUI {devEUI} to MQTT")
-    res = client_mqtt_output.publish(config["output"]["mqtt"]["topic"]+f"/{devEUI}", json.dumps(frame))
+    topic = config["output"]["mqtt"]["topic"]+f"/{devEUI}"
+    logger.info(f"Publishing decoded frame for DevEUI {devEUI} to MQTT on topic {topic}")
+    res = client_mqtt_output.publish(topic, json.dumps(frame))
     if res.rc == mqtt.MQTT_ERR_SUCCESS:
         return True
     else:
@@ -306,7 +310,6 @@ def init_timeout_checker():
 
 def init_output():
     global client_mqtt_output
-    print(config)
     if config["output"]["mqtt"]["enable"] == True:
         try:
             status_code = client_mqtt_output.connect(config["output"]["mqtt"]["host"], config["output"]["mqtt"]["port"])

@@ -148,3 +148,6 @@ def start_system(monkeymodule):
     time.sleep(1)
 
     yield mosquitto_process
+
+    with pytest.raises(SystemExit):
+        main.shutdown(mosquitto_process)

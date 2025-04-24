@@ -64,7 +64,7 @@ schema = {
         "type": "dict",
         "schema": {
             "max_chunks": {"type": "integer", "min": 1, "required": True},
-            "timeout": {"type": "integer", "min": 1, "required": True},
+            "timeout": {"type": "float", "min": 0.005, "required": True}, # min is 20s
             "lns": {"type": "string", "allowed": ["ttn", "loriot"], "required": True},
         },
     },
