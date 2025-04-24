@@ -109,12 +109,13 @@ def frame_timeout_checker():
             to_be_deleted = []
             for devEUI, frame_list in frame_buffer.items():
 
+                # Check if we don't have too many fragments pending
                 if len(frame_list) > config["frame"]["max_chunks"]:
                     logger.warning(f"Received more than configured {get_max_chunk()} chunk from {devEUI}, flushing all its pending fragments...")
                     to_be_deleted.append(devEUI)
 
                 # Check if last frame received is still fresh enough
-                if frame_list and (time.time() - frame_list[-1]["received_time"] > (get_timeout() * 3600)):
+                elif frame_list and (time.time() - frame_list[-1]["received_time"] > (get_timeout() * 3600)):
                     to_be_deleted.append(devEUI)
                     logger.warning(f"Didn't received any new chunk from DevEUI {devEUI} for {get_timeout()} hours, flushing all its pending fragment...")
 

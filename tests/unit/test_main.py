@@ -52,7 +52,8 @@ class TestProcessFrame:
 class TestTimeoutChecker:
     @pytest.mark.parametrize(
         "dynamic_config",
-        [{}, {"frame": {"max_chunks": 1, "timeout": 1000000000000, "lns": "ttn"}}],
+        [{"frame": {"max_chunks": 100, "timeout": 1, "lns": "ttn"}},
+          {"frame": {"max_chunks": 1, "timeout": 1000000000000, "lns": "ttn"}}],
     )
     def test_deletion(self, monkeypatch, dynamic_config):
         """Test : deletion cuz timeout, cuz max chunk"""
