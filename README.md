@@ -75,11 +75,13 @@ An example [docker-compose.yaml](/docker-compose.yml) is provided. A custom conf
 
 A Web Interface is available to monitor which frames are pending for which devices : 
 
-![monitor screenshot](images/monitor.png)
+![monitor screenshot](https://github.com/user-attachments/assets/66c9ec6e-7ae4-49e0-a051-0878bbd29b76)
+
 
 # Software architecture
 
-![sw arch](images/arch.png)
+![sw arch](https://github.com/user-attachments/assets/036580de-f49b-4a1b-837b-15c22aa9b781)
+
 
 
 # Sizing
